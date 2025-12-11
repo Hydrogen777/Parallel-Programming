@@ -175,8 +175,42 @@ int main() {
                 
                 cudaDeviceSynchronize();
                 
+                // DEBUG: Check output and input values (first image only)
+                if (b == 0 && num_batches == 0) {
+                    vector<float> h_output(C * H * W);
+                    vector<float> h_input(C * H * W);
+                    gpu_memcpy_d2h(h_output.data(), d_output, C * H * W * sizeof(float));
+                    gpu_memcpy_d2h(h_input.data(), d_input, C * H * W * sizeof(float));
+                    
+                    float output_sum = 0.0f, input_sum = 0.0f;
+                    float output_max = -1e10f, output_min = 1e10f;
+                    float input_max = -1e10f, input_min = 1e10f;
+                    for (int i = 0; i < C * H * W; i++) {
+                        output_sum += h_output[i];
+                        input_sum += h_input[i];
+                        if (h_output[i] > output_max) output_max = h_output[i];
+                        if (h_output[i] < output_min) output_min = h_output[i];
+                        if (h_input[i] > input_max) input_max = h_input[i];
+                        if (h_input[i] < input_min) input_min = h_input[i];
+                    }
+                    cout << "[DEBUG] Image 0 - Input: sum=" << input_sum << " min=" << input_min 
+                         << " max=" << input_max << " (first 5: ";
+                    for (int i = 0; i < 5; i++) cout << h_input[i] << " ";
+                    cout << ")" << endl;
+                    cout << "[DEBUG] Image 0 - Output: sum=" << output_sum << " min=" << output_min 
+                         << " max=" << output_max << " (first 5: ";
+                    for (int i = 0; i < 5; i++) cout << h_output[i] << " ";
+                    cout << ")" << endl;
+                }
+                
                 // COMPUTE LOSS
                 float loss = mse_loss_forward(d_output, d_input, C * H * W);
+                
+                // DEBUG: Check if loss is valid
+                if (b == 0 && num_batches == 0) {
+                    cout << "[DEBUG] Loss for first image: " << loss << endl;
+                }
+                
                 batch_loss += loss;
                 
                 // BACKWARD PASS (Same as P2 - backward kernels are shared!)

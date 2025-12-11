@@ -39,12 +39,31 @@ float mse_loss_forward(
     const int block_size = 256;
     const int num_blocks = (N + block_size - 1) / block_size;
     
+    if (num_blocks == 0) return 0.0f;  // Safety check
+    
     float* d_partial_loss;
-    cudaMalloc(&d_partial_loss, num_blocks * sizeof(float));
+    cudaError_t err = cudaMalloc(&d_partial_loss, num_blocks * sizeof(float));
+    if (err != cudaSuccess) {
+        printf("[ERROR] cudaMalloc failed in mse_loss_forward: %s\n", cudaGetErrorString(err));
+        return 0.0f;
+    }
+    
+    // Initialize partial loss to zero
+    cudaMemset(d_partial_loss, 0, num_blocks * sizeof(float));
     
     mse_loss_forward_kernel<<<num_blocks, block_size, block_size * sizeof(float)>>>(
         d_output, d_target, d_partial_loss, N
     );
+    
+    // Check for kernel launch errors
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        printf("[ERROR] Kernel launch failed in mse_loss_forward: %s\n", cudaGetErrorString(err));
+        cudaFree(d_partial_loss);
+        return 0.0f;
+    }
+    
+    cudaDeviceSynchronize();
     
     float* h_partial_loss = new float[num_blocks];
     cudaMemcpy(h_partial_loss, d_partial_loss, num_blocks * sizeof(float), cudaMemcpyDeviceToHost);
@@ -57,7 +76,10 @@ float mse_loss_forward(
     delete[] h_partial_loss;
     cudaFree(d_partial_loss);
     
-    return total_loss / N;
+    if (N > 0) {
+        return total_loss / N;
+    }
+    return 0.0f;
 }
 
 __global__ void mse_loss_backward_kernel(
