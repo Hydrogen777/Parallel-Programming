@@ -1,0 +1,46 @@
+# Auto-detect NVCC
+NVCC := $(shell which nvcc 2>/dev/null || echo /usr/local/cuda/bin/nvcc)
+
+ifeq ($(shell test -x $(NVCC) && echo yes),yes)
+    $(info Found NVCC at: $(NVCC))
+else
+    $(error NVCC not found. Please install CUDA Toolkit)
+endif
+
+CXXFLAGS := -O3 -std=c++17
+INC := -I../../phase3_gpu_optimized_v2/Include -I../include
+
+# Phase3 v2 source files
+SRC_PHASE3 = ../../phase3_gpu_optimized_v2/src/kernels/im2col.cu \
+            ../../phase3_gpu_optimized_v2/src/kernels/gemm.cu \
+            ../../phase3_gpu_optimized_v2/src/kernels/relu.cu \
+            ../../phase3_gpu_optimized_v2/src/kernels/maxpool.cu \
+            ../../phase3_gpu_optimized_v2/src/kernels/upsample.cu \
+            ../../phase3_gpu_optimized_v2/src/utils/cuda_utils.cpp \
+            ../../phase3_gpu_optimized_v2/src/utils/gpu_memory.cu
+
+# Training source files (if they exist)
+SRC_TRAIN = ../src/kernels/conv2d_backward.cu \
+           ../src/kernels/mse_loss.cu \
+           ../src/sgd_optimizer.cu \
+           ../src/data_loader.cpp \
+           ../src/logger.cpp
+
+TARGET = train_phase3_v2
+
+all: $(TARGET)
+
+# Try to build with training sources, fallback to main file only if they don't exist
+$(TARGET): train_phase3_v2.cu $(SRC_PHASE3)
+	@if [ -f ../src/kernels/conv2d_backward.cu ]; then \
+		$(NVCC) $(CXXFLAGS) $(INC) train_phase3_v2.cu $(SRC_PHASE3) $(SRC_TRAIN) -o $(TARGET); \
+	else \
+		echo "Warning: Training source files not found. Building with phase3 sources only..."; \
+		$(NVCC) $(CXXFLAGS) $(INC) train_phase3_v2.cu $(SRC_PHASE3) -o $(TARGET); \
+	fi
+
+clean:
+	rm -f $(TARGET)
+
+.PHONY: all clean
+
