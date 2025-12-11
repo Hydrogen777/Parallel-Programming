@@ -1,4 +1,4 @@
-#include "../../include/sgd_optimizer.h"
+#include "../include/sgd_optimizer.h"
 #include <cuda_runtime.h>
 
 __global__ void sgd_update_kernel(
