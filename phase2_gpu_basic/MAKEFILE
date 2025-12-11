@@ -1,0 +1,45 @@
+# Auto-detect NVCC compiler
+NVCC := $(shell which nvcc 2>/dev/null || echo /usr/local/cuda/bin/nvcc)
+
+# Check if nvcc exists
+ifeq ($(shell test -x $(NVCC) && echo yes),yes)
+    $(info Found NVCC at: $(NVCC))
+else
+    $(error NVCC not found. Please install CUDA toolkit)
+endif
+CXXFLAGS = -std=c++17
+
+SRCS_MAIN = src/main_gpu.cu \
+       src/autoencoder.cu \
+       src/utils/cuda_utils.cpp \
+       src/utils/gpu_memory.cu \
+       src/kernels/conv2d.cu \
+       src/kernels/maxpool.cu \
+       src/kernels/relu.cu \
+       src/kernels/upsample.cu
+
+SRCS_TEST = src/main_gpu_test.cu \
+       src/autoencoder.cu \
+       src/utils/cuda_utils.cpp \
+       src/utils/gpu_memory.cu \
+       src/kernels/conv2d.cu \
+       src/kernels/maxpool.cu \
+       src/kernels/relu.cu \
+       src/kernels/upsample.cu
+
+TARGET_MAIN = run_gpu
+TARGET_TEST = test_gpu
+INC = -I Include
+
+all: $(TARGET_MAIN) $(TARGET_TEST)
+
+$(TARGET_MAIN): $(SRCS_MAIN)
+	$(NVCC) $(CXXFLAGS) $(INC) $(SRCS_MAIN) -o $(TARGET_MAIN)
+
+$(TARGET_TEST): $(SRCS_TEST)
+	$(NVCC) $(CXXFLAGS) $(INC) $(SRCS_TEST) -o $(TARGET_TEST)
+
+clean:
+	rm -f $(TARGET_MAIN) $(TARGET_TEST)
+
+.PHONY: clean
