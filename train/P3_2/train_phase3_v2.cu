@@ -166,12 +166,15 @@ int main() {
                 relu<<<(128*H/2*W/2+255)/256, 256>>>(d_conv2_out, 128*H/2*W/2);
                 maxpool<<<dim3((W/4+15)/16, (H/4+15)/16, 128), block>>>(d_conv2_out, d_pool2_out, H/2, W/2, 128);
                 
-                // Decoder: Dec1 + Upsample + Dec2 + Upsample + Final
+                // Decoder: Dec1 + ReLU + Upsample + Dec2 + ReLU + Upsample + Final
                 forward_conv_layer(d_pool2_out, d_w_dec1, d_dec1_out, d_col_buffer, H/4, W/4, 128, 128);
+                relu<<<(128*H/4*W/4+255)/256, 256>>>(d_dec1_out, 128*H/4*W/4);
                 upsample<<<dim3((W/2+15)/16, (H/2+15)/16, 128), block>>>(d_dec1_out, d_ups1_out, H/4, W/4, 128);
                 forward_conv_layer(d_ups1_out, d_w_dec2, d_dec2_out, d_col_buffer, H/2, W/2, 128, 256);
+                relu<<<(256*H/2*W/2+255)/256, 256>>>(d_dec2_out, 256*H/2*W/2);
                 upsample<<<dim3((W+15)/16, (H+15)/16, 256), block>>>(d_dec2_out, d_ups2_out, H/2, W/2, 256);
                 forward_conv_layer(d_ups2_out, d_w_final, d_output, d_col_buffer, H, W, 256, C);
+                // Final conv has no activation (output can be negative for reconstruction)
                 
                 cudaDeviceSynchronize();
                 
@@ -249,6 +252,12 @@ int main() {
                 );
                 cudaDeviceSynchronize();
                 
+                // Backward through ReLU2 (after Dec2)
+                relu_backward<<<(256*H/2*W/2+255)/256, 256>>>(
+                    d_grad_dec2_out, d_dec2_out, d_grad_dec2_out, 256*H/2*W/2
+                );
+                cudaDeviceSynchronize();
+                
                 // Backward through Dec2 Conv (128→256)
                 dim3 grid_dec2_bw_w((3+15)/16, (3+15)/16, 256*128);
                 dim3 grid_dec2_bw_i((W/2+15)/16, (H/2+15)/16, 128);
@@ -266,6 +275,12 @@ int main() {
                 dim3 grid_ups1_bw((W/4+15)/16, (H/4+15)/16, 128);
                 upsample_backward<<<grid_ups1_bw, block>>>(
                     d_grad_ups1_out, d_grad_dec1_out, H/4, W/4, 128
+                );
+                cudaDeviceSynchronize();
+                
+                // Backward through ReLU1 (after Dec1)
+                relu_backward<<<(128*H/4*W/4+255)/256, 256>>>(
+                    d_grad_dec1_out, d_dec1_out, d_grad_dec1_out, 128*H/4*W/4
                 );
                 cudaDeviceSynchronize();
                 
