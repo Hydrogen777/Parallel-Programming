@@ -1,32 +1,8 @@
 #include "../../include/mse_loss.h"
 #include <cuda_runtime.h>
 #include <cstdio>
-#include <algorithm>
-using std::min;
 
-// Simple kernel without shared memory to avoid PTX issues
-__global__ void mse_loss_forward_kernel(
-    const float* output,
-    const float* target,
-    float* partial_sum,
-    int N
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    float sum = 0.0f;
-    // Each thread processes multiple elements
-    int stride = blockDim.x * gridDim.x;
-    for (int i = idx; i < N; i += stride) {
-        float d = output[i] - target[i];
-        sum += d * d;
-    }
-    
-    // Use atomicAdd to accumulate (no shared memory needed)
-    if (sum != 0.0f) {
-        atomicAdd(partial_sum, sum);
-    }
-}
-
+// Compute MSE loss on host to avoid PTX toolchain issues
 float mse_loss_forward(
     const float* d_output,
     const float* d_target,
@@ -34,50 +10,35 @@ float mse_loss_forward(
 ) {
     if (N == 0) return 0.0f;
     
-    // Allocate single float for atomic accumulation
-    float* d_sum;
-    cudaError_t err = cudaMalloc(&d_sum, sizeof(float));
+    // Copy data from device to host
+    float* h_output = new float[N];
+    float* h_target = new float[N];
+    
+    cudaError_t err = cudaMemcpy(h_output, d_output, N * sizeof(float), cudaMemcpyDeviceToHost);
     if (err != cudaSuccess) {
-        printf("[ERROR] cudaMalloc failed in mse_loss_forward: %s\n", cudaGetErrorString(err));
+        printf("[ERROR] cudaMemcpy output failed: %s\n", cudaGetErrorString(err));
+        delete[] h_output;
+        delete[] h_target;
         return 0.0f;
     }
     
-    // Initialize to zero
-    cudaMemset(d_sum, 0, sizeof(float));
-    
-    // Launch kernel with simple configuration (no shared memory)
-    const int block_size = 256;
-    const int num_blocks = (N + block_size - 1) / block_size;
-    
-    mse_loss_forward_kernel<<<num_blocks, block_size>>>(
-        d_output, d_target, d_sum, N
-    );
-    
-    // Check for kernel launch errors
-    err = cudaGetLastError();
+    err = cudaMemcpy(h_target, d_target, N * sizeof(float), cudaMemcpyDeviceToHost);
     if (err != cudaSuccess) {
-        printf("[ERROR] Kernel launch failed in mse_loss_forward: %s\n", cudaGetErrorString(err));
-        cudaFree(d_sum);
+        printf("[ERROR] cudaMemcpy target failed: %s\n", cudaGetErrorString(err));
+        delete[] h_output;
+        delete[] h_target;
         return 0.0f;
     }
     
-    err = cudaDeviceSynchronize();
-    if (err != cudaSuccess) {
-        printf("[ERROR] cudaDeviceSynchronize failed: %s\n", cudaGetErrorString(err));
-        cudaFree(d_sum);
-        return 0.0f;
-    }
-    
-    // Copy result back
+    // Compute MSE on host
     float total_sum = 0.0f;
-    err = cudaMemcpy(&total_sum, d_sum, sizeof(float), cudaMemcpyDeviceToHost);
-    if (err != cudaSuccess) {
-        printf("[ERROR] cudaMemcpy failed: %s\n", cudaGetErrorString(err));
-        cudaFree(d_sum);
-        return 0.0f;
+    for (int i = 0; i < N; i++) {
+        float d = h_output[i] - h_target[i];
+        total_sum += d * d;
     }
     
-    cudaFree(d_sum);
+    delete[] h_output;
+    delete[] h_target;
     
     return total_sum / N;
 }
