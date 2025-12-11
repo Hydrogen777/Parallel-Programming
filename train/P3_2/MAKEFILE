@@ -30,14 +30,9 @@ TARGET = train_phase3_v2
 
 all: $(TARGET)
 
-# Try to build with training sources, fallback to main file only if they don't exist
-$(TARGET): train_phase3_v2.cu $(SRC_PHASE3)
-	@if [ -f ../src/kernels/conv2d_backward.cu ]; then \
-		$(NVCC) $(CXXFLAGS) $(INC) train_phase3_v2.cu $(SRC_PHASE3) $(SRC_TRAIN) -o $(TARGET); \
-	else \
-		echo "Warning: Training source files not found. Building with phase3 sources only..."; \
-		$(NVCC) $(CXXFLAGS) $(INC) train_phase3_v2.cu $(SRC_PHASE3) -o $(TARGET); \
-	fi
+# Build with all training sources
+$(TARGET): train_phase3_v2.cu $(SRC_PHASE3) $(SRC_TRAIN)
+	$(NVCC) $(CXXFLAGS) $(INC) train_phase3_v2.cu $(SRC_PHASE3) $(SRC_TRAIN) -o $(TARGET)
 
 clean:
 	rm -f $(TARGET)
